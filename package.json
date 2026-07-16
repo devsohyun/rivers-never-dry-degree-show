@@ -1,0 +1,18 @@
+{
+  "name": "rivers-never-dry-degree-show",
+  "version": "1.0.0",
+  "description": "Server system for Rivers Never Dry installation for MA Computational Arts Degree Show 2026",
+  "license": "ISC",
+  "author": "Sohyun Jun",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "http": "^0.0.1-security",
+    "node-osc": "^11.6.0",
+    "socket.io": "^4.8.3"
+  }
+}
