@@ -7,10 +7,17 @@ import { SerialPort } from 'serialport';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---- Config ----
+// Set to true before starting the server to run a one-off self-test at
+// startup: fires the motor + local audio immediately (instead of waiting for
+// a scheduled discharge time) and logs the EA / Thames Water API requests
+// clearly as debug output. Leave false for real exhibition runs.
+const DEBUG_MODE = true;
+
 const SOCKETIO_PORT = 8888;
 const OSC_CLIENT_PORT = 8000;
 const OSC_SERVER_PORT = 8001;
@@ -34,8 +41,17 @@ const DISCHARGE_SCHEDULE_PATH = path.join(__dirname, 'data', 'discharge-schedule
 // Serial connection to the stepper-motor Arduino (separate from the OSC link
 // to TouchDesigner above). Update MOTOR_SERIAL_PATH to match the board's
 // actual port - available ports are logged at startup below.
-const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/tty.usbmodem1101';
+const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/cu.usbmodem142301';
 const MOTOR_SERIAL_BAUD = 9600;
+
+// Discharge audio cue, played locally on this machine (via afplay, macOS)
+// each time the motor triggers. Plays straight through the folder in order,
+// looping back to the first file after the last, for as long as the
+// discharge state lasts - this should match the Arduino's RETURN_DELAY_MS
+// (app/controllers/Rotate_StepperMotor_OSC), since that's how long the motor
+// stays in its rotated/"discharging" position before returning.
+const DISCHARGE_AUDIO_DIR = path.join(__dirname, '..', 'app', 'visuals', 'audio');
+const DISCHARGE_DURATION_MS = 5 * 60 * 1000;
 
 // ---- Server setup (Express + Socket.IO) ----
 // Socket.IO is not used by TouchDesigner (which talks OSC only). It's kept
@@ -153,6 +169,7 @@ async function pollDischargeStatus() {
 }
 
 async function pollAll() {
+  if (DEBUG_MODE) console.log('DEBUG_MODE: running startup API requests (EA + Thames Water)');
   await pollWaterQuality();
   await pollDischargeStatus();
 }
@@ -174,13 +191,96 @@ motorSerial.on('error', (err) => {
   console.error('Motor serial error:', err.message);
 });
 
+// Echo whatever the Arduino prints (Serial.println debug lines from the
+// motor sketch) into this same log stream, so serial output and server logs
+// interleave in one terminal instead of needing a separate serial monitor.
+// Bytes can arrive split across multiple 'data' events, so buffer until a
+// newline instead of printing each raw chunk.
+let motorSerialLineBuffer = '';
+motorSerial.on('data', (data) => {
+  motorSerialLineBuffer += data.toString();
+  const lines = motorSerialLineBuffer.split('\n');
+  motorSerialLineBuffer = lines.pop();
+  lines.filter(Boolean).forEach(line => {
+    console.log(`[Arduino] ${line.trim()}`);
+  });
+});
+
+// Opening the port resets most Arduino boards (DTR toggles on connect), and
+// setup() takes a couple of seconds to finish running. Writing before that
+// completes silently drops the byte - the board isn't reading serial yet.
+// So track readiness separately from the 'open' event and hold writes until
+// the reset/boot window has passed.
+let motorSerialReady = false;
+motorSerial.on('open', () => {
+  console.log('Motor serial port open, waiting for board to finish resetting...');
+  setTimeout(() => {
+    motorSerialReady = true;
+    console.log('Motor serial port ready');
+  }, 2000);
+});
+
 SerialPort.list().then(ports => {
   console.log('Available serial ports:', ports.map(p => p.path));
 });
 
 function triggerMotor() {
+  if (!motorSerialReady) {
+    console.log('Motor serial port not ready yet, waiting to send ROTATE...');
+    setTimeout(triggerMotor, 500);
+    return;
+  }
   motorSerial.write('ROTATE\n', (err) => {
     if (err) console.error('Motor serial write failed:', err.message);
+  });
+  startDischargeAudioLoop();
+}
+
+// Filenames are kept as-is and read directly from DISCHARGE_AUDIO_DIR (no
+// hardcoded track list), sorted so playback order is stable across runs.
+const dischargeAudioFiles = fs.readdirSync(DISCHARGE_AUDIO_DIR)
+  .filter(f => f.toLowerCase().endsWith('.wav'))
+  .sort();
+
+if (!dischargeAudioFiles.length) {
+  console.log(`Discharge audio: no .wav files found in ${DISCHARGE_AUDIO_DIR}`);
+}
+
+let dischargeAudioIndex = 0;
+let dischargeAudioActive = false;
+
+// Plays tracks back-to-back, looping from the last file to the first, until
+// DISCHARGE_DURATION_MS has elapsed since the trigger. If a trigger arrives
+// while a loop is already running, it's ignored - the current loop keeps
+// going rather than restarting the 10-minute window or overlapping playback.
+function startDischargeAudioLoop() {
+  if (!dischargeAudioFiles.length) return;
+  if (dischargeAudioActive) {
+    console.log('Discharge audio: loop already running, ignoring overlapping trigger');
+    return;
+  }
+
+  dischargeAudioActive = true;
+  const endAt = Date.now() + DISCHARGE_DURATION_MS;
+  console.log(`Discharge audio: starting ${(DISCHARGE_DURATION_MS / 60000).toFixed(1)} min loop`);
+  playNextDischargeAudio(endAt);
+}
+
+function playNextDischargeAudio(endAt) {
+  if (Date.now() >= endAt) {
+    dischargeAudioActive = false;
+    console.log('Discharge audio: loop finished');
+    return;
+  }
+
+  const file = dischargeAudioFiles[dischargeAudioIndex];
+  const filePath = path.join(DISCHARGE_AUDIO_DIR, file);
+  dischargeAudioIndex = (dischargeAudioIndex + 1) % dischargeAudioFiles.length;
+
+  console.log(`Discharge audio: playing ${file}`);
+  execFile('afplay', [filePath], (err) => {
+    if (err) console.error('Discharge audio playback failed:', err.message);
+    playNextDischargeAudio(endAt);
   });
 }
 
@@ -252,6 +352,11 @@ function scheduleMotorTriggers() {
 }
 
 scheduleMotorTriggers();
+
+if (DEBUG_MODE) {
+  console.log('DEBUG_MODE: triggering motor + local audio immediately for testing');
+  triggerMotor();
+}
 
 // ---- Socket.IO <-> OSC bridge ----
 // Not wired up to anything yet; scaffolding for the future browser interface.

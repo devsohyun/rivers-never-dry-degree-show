@@ -10,8 +10,14 @@ AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 // How far to rotate on each trigger, and how long to wait before returning.
 // The server only ever sends one command ("ROTATE"); all timing for the
 // return trip lives here so it survives even if the server restarts.
-const long ROTATE_STEPS = 200;
-const unsigned long RETURN_DELAY_MS = 10UL * 60UL * 1000UL; // 10 minutes
+//
+// ROTATE_STEPS is in driver microsteps, not motor degrees or full steps.
+// Driver is set to microstep 8 => 1600 pulses/rev, so:
+//   ROTATE_STEPS = (desired_angle_degrees / 360) * 1600
+// e.g. 67 steps for ~15 degrees, 89 for ~20 degrees, 133 for ~30 degrees.
+// Recompute this if the driver's microstep DIP switches change.
+const long ROTATE_STEPS = 178; // ~40 degree nudge
+const unsigned long RETURN_DELAY_MS = 5UL * 60UL * 1000UL; // must match DISCHARGE_DURATION_MS in server.js
 
 enum MotorState { IDLE, MOVING_OUT, WAITING, MOVING_BACK };
 MotorState motorState = IDLE;
@@ -22,8 +28,8 @@ String serialBuffer = "";
 void setup() {
   Serial.begin(9600);
 
-  stepper.setMaxSpeed(1000.0);
-  stepper.setSpeed(700.0);
+  stepper.setMaxSpeed(150.0);
+  stepper.setAcceleration(100.0); // required for run()/moveTo() to move at all - without this, acceleration defaults to 0 and computed speed stays 0
 }
 
 void loop() {
