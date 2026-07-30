@@ -9,12 +9,12 @@
 I2S i2s(OUTPUT, I2S_BCLK, I2S_DATA);
 BackgroundAudioWAV wav(i2s);
 
-const int NUM_BUTTONS = 2;
-const int buttonPins[NUM_BUTTONS] = {2, 3};
-const char* trackFiles[NUM_BUTTONS] = {"track1.wav", "track2.wav"};
+const int NUM_BUTTONS = 5;
+const int buttonPins[NUM_BUTTONS] = {2, 3, 4, 5, 6};
+const char* trackFiles[NUM_BUTTONS] = {"track1.wav", "track2.wav", "track3.wav", "track4.wav", "track5.wav"};
 
 File currentFile;
-unsigned long lastPress[NUM_BUTTONS] = {0, 0};
+unsigned long lastPress[NUM_BUTTONS] = {0, 0, 0, 0, 0};
 const unsigned long DEBOUNCE_MS = 200;
 
 // Interrupts whatever is currently streaming and starts a new track from byte 0.

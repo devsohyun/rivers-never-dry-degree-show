@@ -13,6 +13,7 @@
     "express": "^5.2.1",
     "http": "^0.0.1-security",
     "node-osc": "^11.6.0",
+    "serialport": "^13.0.0",
     "socket.io": "^4.8.3"
   }
 }
