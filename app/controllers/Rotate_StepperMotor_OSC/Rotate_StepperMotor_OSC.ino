@@ -16,7 +16,7 @@ AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 //   ROTATE_STEPS = (desired_angle_degrees / 360) * 1600
 // e.g. 67 steps for ~15 degrees, 89 for ~20 degrees, 133 for ~30 degrees.
 // Recompute this if the driver's microstep DIP switches change.
-const long ROTATE_STEPS = 178; // ~40 degree nudge
+const long ROTATE_STEPS = 380; // (desired_angle_degrees / 360) * 1600
 const unsigned long RETURN_DELAY_MS = 5UL * 60UL * 1000UL; // must match DISCHARGE_DURATION_MS in server.js
 
 enum MotorState { IDLE, MOVING_OUT, WAITING, MOVING_BACK };
@@ -28,8 +28,8 @@ String serialBuffer = "";
 void setup() {
   Serial.begin(9600);
 
-  stepper.setMaxSpeed(150.0);
-  stepper.setAcceleration(100.0); // required for run()/moveTo() to move at all - without this, acceleration defaults to 0 and computed speed stays 0
+  stepper.setMaxSpeed(100.0);
+  stepper.setAcceleration(50.0); // required for run()/moveTo() to move at all - without this, acceleration defaults to 0 and computed speed stays 0
 }
 
 void loop() {
