@@ -6,11 +6,13 @@ Rivers Never Dry installation for MA Computational Arts Degree Show 2026 at Gold
 
 ```
 app/
+  audio/
+    discharge/                   Discharge audio cues, played locally via afplay on motor trigger
   controllers/
-    InteractiveMap_AudioPlayer/   Arduino sketch: button-triggered SD audio playback
+    InteractiveMap_AudioPlayer/
+      sd_card/                   Button-triggered tracks, copied onto the player's SD card
     Rotate_StepperMotor_OSC/      Arduino sketch: stepper motor, triggered over serial
   visuals/
-    audio/                       Discharge audio cues, played locally via afplay
     SPH_Test.toe                 TouchDesigner
     visualisation.toe            TouchDesigner
 server/

@@ -41,7 +41,7 @@ const DISCHARGE_SCHEDULE_PATH = path.join(__dirname, 'data', 'discharge-schedule
 // Serial connection to the stepper-motor Arduino (separate from the OSC link
 // to TouchDesigner above). Update MOTOR_SERIAL_PATH to match the board's
 // actual port - available ports are logged at startup below.
-const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/cu.usbmodem141101';
+const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/cu.usbmodem141301';
 const MOTOR_SERIAL_BAUD = 9600;
 
 // Discharge audio cue, played locally on this machine (via afplay, macOS)
@@ -50,7 +50,7 @@ const MOTOR_SERIAL_BAUD = 9600;
 // discharge state lasts - this should match the Arduino's RETURN_DELAY_MS
 // (app/controllers/Rotate_StepperMotor_OSC), since that's how long the motor
 // stays in its rotated/"discharging" position before returning.
-const DISCHARGE_AUDIO_DIR = path.join(__dirname, '..', 'app', 'visuals', 'audio');
+const DISCHARGE_AUDIO_DIR = path.join(__dirname, '..', 'app', 'audio', 'discharge');
 const DISCHARGE_DURATION_MS = 5 * 60 * 1000;
 
 // ---- Server setup (Express + Socket.IO) ----
