@@ -44,6 +44,11 @@ const DISCHARGE_SCHEDULE_PATH = path.join(__dirname, 'data', 'discharge-schedule
 const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/cu.usbmodem141301';
 const MOTOR_SERIAL_BAUD = 9600;
 
+// Set to false when the motor Arduino isn't connected (e.g. debugging other
+// parts of the server) - skips opening the serial port entirely, so there's
+// no port-not-found error and no [Arduino] log spam.
+const MOTOR_ENABLED = false;
+
 // Discharge audio cue, played locally on this machine (via afplay, macOS)
 // each time the motor triggers. Plays straight through the folder in order,
 // looping back to the first file after the last, for as long as the
@@ -108,23 +113,36 @@ async function findMeasureIds() {
   return found;
 }
 
+// The EA API occasionally stops responding on a connection entirely (no
+// error, just hangs) rather than returning slowly or erroring out. A timeout
+// plus a per-measure try/catch stops one hung request from blocking the rest
+// of the batch indefinitely or from failing every other measure via
+// Promise.all's fail-fast rejection.
+const EA_REQUEST_TIMEOUT_MS = 180 * 1000; // wait up to 3 minutes for a slow EA response before aborting the request
+
 async function pollMeasure({ notationSuffix, address, label, unit }) {
   const measureId = measureIds[notationSuffix];
   if (!measureId) {
     console.log(`EA: no measure found for ${label} (${notationSuffix})`);
     return;
   }
-  const res = await fetch(`${EA_BASE}/id/measures/${measureId}/readings.json?latest=true`);
-  const data = await res.json();
-  const readings = data.items || [];
-  if (!readings.length) {
-    console.log(`EA: no ${label} reading available`);
-    return;
+  try {
+    const res = await fetch(`${EA_BASE}/id/measures/${measureId}/readings.json?latest=true`, {
+      signal: AbortSignal.timeout(EA_REQUEST_TIMEOUT_MS),
+    });
+    const data = await res.json();
+    const readings = data.items || [];
+    if (!readings.length) {
+      console.log(`EA: no ${label} reading available`);
+      return;
+    }
+    const { value, dateTime } = readings[0];
+    const numValue = parseFloat(value);
+    console.log(`EA request succeeded: ${label} ${numValue} ${unit} at ${dateTime}`);
+    OSC_CLIENT.send(address, numValue, () => {});
+  } catch (err) {
+    console.error(`EA request failed for ${label}:`, err.message);
   }
-  const { value, dateTime } = readings[0];
-  const numValue = parseFloat(value);
-  console.log(`EA request succeeded: ${label} ${numValue} ${unit} at ${dateTime}`);
-  OSC_CLIENT.send(address, numValue, () => {});
 }
 
 async function pollWaterQuality() {
@@ -133,9 +151,7 @@ async function pollWaterQuality() {
       measureIds = await findMeasureIds();
       console.log('Found EA measures:', measureIds);
     }
-    for (const measure of MEASURES) {
-      await pollMeasure(measure);
-    }
+    await Promise.all(MEASURES.map(pollMeasure));
   } catch (err) {
     console.error('EA request failed:', err.message);
     measureIds = null;
@@ -184,47 +200,57 @@ setInterval(pollAll, POLL_INTERVAL_MS);
 // returns to its initial position after 10 minutes - that timing lives on the
 // Arduino itself (see app/controllers/Rotate_StepperMotor_OSC), so Node only
 // has to send the one-word trigger.
-const motorSerial = new SerialPort({ path: MOTOR_SERIAL_PATH, baudRate: MOTOR_SERIAL_BAUD }, (err) => {
-  if (err) console.error('Motor serial port error:', err.message);
-});
-motorSerial.on('error', (err) => {
-  console.error('Motor serial error:', err.message);
-});
-
-// Echo whatever the Arduino prints (Serial.println debug lines from the
-// motor sketch) into this same log stream, so serial output and server logs
-// interleave in one terminal instead of needing a separate serial monitor.
-// Bytes can arrive split across multiple 'data' events, so buffer until a
-// newline instead of printing each raw chunk.
-let motorSerialLineBuffer = '';
-motorSerial.on('data', (data) => {
-  motorSerialLineBuffer += data.toString();
-  const lines = motorSerialLineBuffer.split('\n');
-  motorSerialLineBuffer = lines.pop();
-  lines.filter(Boolean).forEach(line => {
-    console.log(`[Arduino] ${line.trim()}`);
-  });
-});
-
-// Opening the port resets most Arduino boards (DTR toggles on connect), and
-// setup() takes a couple of seconds to finish running. Writing before that
-// completes silently drops the byte - the board isn't reading serial yet.
-// So track readiness separately from the 'open' event and hold writes until
-// the reset/boot window has passed.
+let motorSerial = null;
 let motorSerialReady = false;
-motorSerial.on('open', () => {
-  console.log('Motor serial port open, waiting for board to finish resetting...');
-  setTimeout(() => {
-    motorSerialReady = true;
-    console.log('Motor serial port ready');
-  }, 2000);
-});
 
-SerialPort.list().then(ports => {
-  console.log('Available serial ports:', ports.map(p => p.path));
-});
+if (MOTOR_ENABLED) {
+  motorSerial = new SerialPort({ path: MOTOR_SERIAL_PATH, baudRate: MOTOR_SERIAL_BAUD }, (err) => {
+    if (err) console.error('Motor serial port error:', err.message);
+  });
+  motorSerial.on('error', (err) => {
+    console.error('Motor serial error:', err.message);
+  });
+
+  // Echo whatever the Arduino prints (Serial.println debug lines from the
+  // motor sketch) into this same log stream, so serial output and server logs
+  // interleave in one terminal instead of needing a separate serial monitor.
+  // Bytes can arrive split across multiple 'data' events, so buffer until a
+  // newline instead of printing each raw chunk.
+  let motorSerialLineBuffer = '';
+  motorSerial.on('data', (data) => {
+    motorSerialLineBuffer += data.toString();
+    const lines = motorSerialLineBuffer.split('\n');
+    motorSerialLineBuffer = lines.pop();
+    lines.filter(Boolean).forEach(line => {
+      console.log(`[Arduino] ${line.trim()}`);
+    });
+  });
+
+  // Opening the port resets most Arduino boards (DTR toggles on connect), and
+  // setup() takes a couple of seconds to finish running. Writing before that
+  // completes silently drops the byte - the board isn't reading serial yet.
+  // So track readiness separately from the 'open' event and hold writes until
+  // the reset/boot window has passed.
+  motorSerial.on('open', () => {
+    console.log('Motor serial port open, waiting for board to finish resetting...');
+    setTimeout(() => {
+      motorSerialReady = true;
+      console.log('Motor serial port ready');
+    }, 2000);
+  });
+
+  SerialPort.list().then(ports => {
+    console.log('Available serial ports:', ports.map(p => p.path));
+  });
+} else {
+  console.log('MOTOR_ENABLED is false - skipping motor serial connection');
+}
 
 function triggerMotor() {
+  if (!MOTOR_ENABLED) {
+    startDischargeAudioLoop();
+    return;
+  }
   if (!motorSerialReady) {
     console.log('Motor serial port not ready yet, waiting to send ROTATE...');
     setTimeout(triggerMotor, 500);
