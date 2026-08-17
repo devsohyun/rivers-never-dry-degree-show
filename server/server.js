@@ -140,6 +140,7 @@ async function pollMeasure({ notationSuffix, address, label, unit }) {
     const numValue = parseFloat(value);
     console.log(`EA request succeeded: ${label} ${numValue} ${unit} at ${dateTime}`);
     OSC_CLIENT.send(address, numValue, () => {});
+    OSC_CLIENT.send('/ea/last_updated', dateTime, () => {}); // send the last-updated timestamp for any measure.
   } catch (err) {
     console.error(`EA request failed for ${label}:`, err.message);
   }
@@ -179,6 +180,8 @@ async function pollDischargeStatus() {
     OSC_CLIENT.send('/thames/discharge_status', alertStatus, () => {});
     OSC_CLIENT.send('/thames/network_discharging_count', dischargingCount, () => {});
     OSC_CLIENT.send('/thames/network_total_count', totalCount, () => {});
+    OSC_CLIENT.send('/thames/location_name', locationName, () => {});
+    OSC_CLIENT.send('/thames/last_changed', statusChanged, () => {});
   } catch (err) {
     console.error('Thames Water request failed:', err.message);
   }
