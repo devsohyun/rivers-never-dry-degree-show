@@ -17,7 +17,7 @@ AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 // e.g. 67 steps for ~15 degrees, 89 for ~20 degrees, 133 for ~30 degrees.
 // Recompute this if the driver's microstep DIP switches change.
 const long ROTATE_STEPS = 380; // (desired_angle_degrees / 360) * 1600
-const unsigned long RETURN_DELAY_MS = 5UL * 60UL * 1000UL; // must match DISCHARGE_DURATION_MS in server.js
+const unsigned long RETURN_DELAY_MS = 10UL * 60UL * 1000UL; // 10 minutes - must match DISCHARGE_DURATION_MS in server.js
 
 enum MotorState { IDLE, MOVING_OUT, WAITING, MOVING_BACK };
 MotorState motorState = IDLE;

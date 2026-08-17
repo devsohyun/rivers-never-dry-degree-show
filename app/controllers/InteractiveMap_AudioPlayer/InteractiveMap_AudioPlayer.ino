@@ -11,7 +11,7 @@ BackgroundAudioWAV wav(i2s);
 
 const int NUM_BUTTONS = 5;
 const int buttonPins[NUM_BUTTONS] = {2, 3, 4, 5, 6};
-const char* trackFiles[NUM_BUTTONS] = {"track1.wav", "track2.wav", "track3.wav", "track4.wav", "track5.wav"};
+const char* trackFiles[NUM_BUTTONS] = {"button1.wav", "button2.wav", "button3.wav", "button4.wav", "button5.wav"};
 
 File currentFile;
 unsigned long lastPress[NUM_BUTTONS] = {0, 0, 0, 0, 0};

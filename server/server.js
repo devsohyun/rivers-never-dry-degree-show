@@ -56,7 +56,7 @@ const MOTOR_ENABLED = false;
 // (app/controllers/Rotate_StepperMotor_OSC), since that's how long the motor
 // stays in its rotated/"discharging" position before returning.
 const DISCHARGE_AUDIO_DIR = path.join(__dirname, '..', 'app', 'audio', 'discharge');
-const DISCHARGE_DURATION_MS = 5 * 60 * 1000;
+const DISCHARGE_DURATION_MS = 10 * 60 * 1000; // 10 minutes, matching the Arduino's RETURN_DELAY_MS
 
 // ---- Server setup (Express + Socket.IO) ----
 // Socket.IO is not used by TouchDesigner (which talks OSC only). It's kept
@@ -272,13 +272,64 @@ if (!dischargeAudioFiles.length) {
   console.log(`Discharge audio: no .wav files found in ${DISCHARGE_AUDIO_DIR}`);
 }
 
-let dischargeAudioIndex = 0;
-let dischargeAudioActive = false;
+// Reads just the `fmt ` and `data` chunk sizes from a canonical PCM WAV
+// header to compute duration, without decoding the whole file.
+function readWavDurationMs(filePath) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const header = Buffer.alloc(44);
+    fs.readSync(fd, header, 0, 44, 0);
+    const sampleRate = header.readUInt32LE(24);
+    const blockAlign = header.readUInt16LE(32);
+    const dataSize = header.readUInt32LE(40);
+    return (dataSize / (sampleRate * blockAlign)) * 1000;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
-// Plays tracks back-to-back, looping from the last file to the first, until
+// Computed once at startup so per-play duration lookups are just an O(1)
+// map read, not a file read.
+const dischargeAudioDurationsMs = new Map(
+  dischargeAudioFiles.map(f => [f, readWavDurationMs(path.join(DISCHARGE_AUDIO_DIR, f))])
+);
+
+let dischargeAudioActive = false;
+let dischargeAudioBag = [];
+let lastDischargeAudioFile = null;
+
+function shuffle(array) {
+  const result = array.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Draws the next track from a shuffled "bag". When the bag empties, it's
+// refilled with a fresh shuffle of all tracks - if that new shuffle would
+// start with the same track that just finished, swap it so the same file
+// never plays twice in a row across the reshuffle boundary either. This
+// guarantees no repeats until every other track has played once, no matter
+// how long DISCHARGE_DURATION_MS is.
+function drawNextDischargeAudio() {
+  if (dischargeAudioBag.length === 0) {
+    dischargeAudioBag = shuffle(dischargeAudioFiles);
+    if (dischargeAudioBag.length > 1 && dischargeAudioBag[0] === lastDischargeAudioFile) {
+      const swapAt = 1 + Math.floor(Math.random() * (dischargeAudioBag.length - 1));
+      [dischargeAudioBag[0], dischargeAudioBag[swapAt]] = [dischargeAudioBag[swapAt], dischargeAudioBag[0]];
+    }
+  }
+  const file = dischargeAudioBag.shift();
+  lastDischargeAudioFile = file;
+  return file;
+}
+
+// Plays tracks back-to-back in random (non-repeating) order until
 // DISCHARGE_DURATION_MS has elapsed since the trigger. If a trigger arrives
 // while a loop is already running, it's ignored - the current loop keeps
-// going rather than restarting the 10-minute window or overlapping playback.
+// going rather than restarting the window or overlapping playback.
 function startDischargeAudioLoop() {
   if (!dischargeAudioFiles.length) return;
   if (dischargeAudioActive) {
@@ -293,15 +344,25 @@ function startDischargeAudioLoop() {
 }
 
 function playNextDischargeAudio(endAt) {
-  if (Date.now() >= endAt) {
+  const remainingMs = endAt - Date.now();
+  if (remainingMs <= 0) {
     dischargeAudioActive = false;
     console.log('Discharge audio: loop finished');
     return;
   }
 
-  const file = dischargeAudioFiles[dischargeAudioIndex];
+  const file = drawNextDischargeAudio();
+  const duration = dischargeAudioDurationsMs.get(file);
+
+  // Don't start a track that would run past endAt - stop the loop early
+  // instead, rather than overshooting the motor's return time.
+  if (duration > remainingMs) {
+    dischargeAudioActive = false;
+    console.log(`Discharge audio: next track (${file}, ${(duration / 1000).toFixed(1)}s) doesn't fit remaining ${(remainingMs / 1000).toFixed(1)}s - stopping loop early`);
+    return;
+  }
+
   const filePath = path.join(DISCHARGE_AUDIO_DIR, file);
-  dischargeAudioIndex = (dischargeAudioIndex + 1) % dischargeAudioFiles.length;
 
   console.log(`Discharge audio: playing ${file}`);
   execFile('afplay', [filePath], (err) => {
