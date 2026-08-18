@@ -410,12 +410,16 @@ function scheduleMotorTriggers() {
 
   const now = new Date();
   const exhibitAnchor = getExhibitAnchor(now);
-  const exhibitDurationMs = EXHIBIT_TIME_HOURS * 60 * 60 * 1000;
+  // Events are mapped onto [0, EXHIBIT_TIME_HOURS - DISCHARGE_DURATION_MS]
+  // rather than the full window, so the LAST event's discharge cycle (motor
+  // + audio, DISCHARGE_DURATION_MS long) finishes exactly at exhibition
+  // close instead of only starting there.
+  const exhibitDurationMs = EXHIBIT_TIME_HOURS * 60 * 60 * 1000 - DISCHARGE_DURATION_MS;
   const rangeStart = dates[0].getTime();
   const rangeEnd = dates[dates.length - 1].getTime();
   const rangeMs = rangeEnd - rangeStart || 1; // avoid divide-by-zero if only one date
 
-  console.log(`Motor schedule anchored to ${exhibitAnchor.toISOString()} (exhibition ${EXHIBIT_START_HOUR}:00, ${EXHIBIT_TIME_HOURS}h)`);
+  console.log(`Motor schedule anchored to ${exhibitAnchor.toISOString()} (exhibition ${EXHIBIT_START_HOUR}:00, ${EXHIBIT_TIME_HOURS}h, last trigger at -${(DISCHARGE_DURATION_MS / 60000).toFixed(1)} min so its discharge cycle ends on time)`);
 
   let skipped = 0;
   dates.forEach((date, i) => {
