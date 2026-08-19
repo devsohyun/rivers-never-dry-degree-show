@@ -41,13 +41,13 @@ const DISCHARGE_SCHEDULE_PATH = path.join(__dirname, 'data', 'discharge-schedule
 // Serial connection to the stepper-motor Arduino (separate from the OSC link
 // to TouchDesigner above). Update MOTOR_SERIAL_PATH to match the board's
 // actual port - available ports are logged at startup below.
-const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/cu.usbmodem141301';
+const MOTOR_SERIAL_PATH = process.env.MOTOR_SERIAL_PATH || '/dev/tty.usbmodem2301';
 const MOTOR_SERIAL_BAUD = 9600;
 
 // Set to false when the motor Arduino isn't connected (e.g. debugging other
 // parts of the server) - skips opening the serial port entirely, so there's
 // no port-not-found error and no [Arduino] log spam.
-const MOTOR_ENABLED = false;
+const MOTOR_ENABLED = true;
 
 // Discharge audio cue, played locally on this machine (via afplay, macOS)
 // each time the motor triggers. Plays straight through the folder in order,
