@@ -58,7 +58,7 @@ void setup() {
   wav.begin();
   Serial.println("wav.begin() done, ready");
 
-  wav.setGain(2.0); // volume multiplier, 1.0 = unity
+  wav.setGain(1.0); // volume multiplier, 1.0 = unity
 }
 
 void loop() {
