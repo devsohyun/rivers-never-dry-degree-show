@@ -24,7 +24,7 @@ const OSC_SERVER_PORT = 8001;
 
 const EA_BASE = 'https://environment.data.gov.uk/hydrology';
 const STATION_ID = 'CADOG2';
-const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes, matching the EA API's "latest" reading update frequency
+const POLL_INTERVAL_MS = 15 * 60 * 1000;
 
 const THAMES_WATER_BASE = 'https://api.thameswater.co.uk/opendata/v2';
 const DISCHARGE_OUTFALL_ID = 'TWL00400'; // South West Storm Relief CSO
@@ -49,15 +49,14 @@ const MOTOR_SERIAL_BAUD = 9600;
 // no port-not-found error and no [Arduino] log spam.
 const MOTOR_ENABLED = true;
 
-// Discharge audio cue, played locally on this machine (via afplay, macOS).
-// Doesn't start until the motor Arduino reports it has physically reached
-// its rotated position (see the 'REACHED' handling below) - this keeps the
-// motor sound clear of the audio at the start of each discharge. It then
-// plays random non-repeating tracks back to back for DISCHARGE_DURATION_MS,
-// and once the last track actually finishes, the server sends the Arduino
-// RETURN so the motor never moves while audio is still playing.
+// Discharge audio cue, played locally on this machine (via afplay, macOS)
+// each time the motor triggers. Plays straight through the folder in order,
+// looping back to the first file after the last, for as long as the
+// discharge state lasts - this should match the Arduino's RETURN_DELAY_MS
+// (app/controllers/Rotate_StepperMotor_OSC), since that's how long the motor
+// stays in its rotated/"discharging" position before returning.
 const DISCHARGE_AUDIO_DIR = path.join(__dirname, '..', 'app', 'audio', 'discharge');
-const DISCHARGE_DURATION_MS = 10 * 60 * 1000; // 10 minutes of audio per discharge event
+const DISCHARGE_DURATION_MS = 10 * 60 * 1000; // 10 minutes, matching the Arduino's RETURN_DELAY_MS
 
 // ---- Server setup (Express + Socket.IO) ----
 // Socket.IO is not used by TouchDesigner (which talks OSC only). It's kept
@@ -200,12 +199,10 @@ setInterval(pollAll, POLL_INTERVAL_MS);
 
 // ---- Stepper motor exhibition schedule ----
 // Separate from the OSC link above: this talks to the Rotate_StepperMotor_OSC
-// Arduino over USB serial. On trigger, the motor rotates out; the Arduino
-// reports back 'REACHED' once it physically gets there (see the 'data'
-// handler below), which is what actually starts the discharge audio - not
-// the ROTATE write itself. The motor then waits in place until this server
-// sends 'RETURN', which only happens once the audio loop has genuinely
-// finished, so the motor never moves back while a clip is still playing.
+// Arduino over USB serial. On trigger, the motor rotates a small amount and
+// returns to its initial position after 10 minutes - that timing lives on the
+// Arduino itself (see app/controllers/Rotate_StepperMotor_OSC), so Node only
+// has to send the one-word trigger.
 let motorSerial = null;
 let motorSerialReady = false;
 
@@ -227,16 +224,8 @@ if (MOTOR_ENABLED) {
     motorSerialLineBuffer += data.toString();
     const lines = motorSerialLineBuffer.split('\n');
     motorSerialLineBuffer = lines.pop();
-    lines.filter(Boolean).forEach(rawLine => {
-      const line = rawLine.trim();
-      console.log(`[Arduino] ${line}`);
-      // Machine-parseable token the Arduino sends the instant it physically
-      // reaches the rotated position - starting audio here (rather than
-      // when ROTATE is written) is what keeps the motor sound clear at the
-      // start of each discharge.
-      if (line === 'REACHED') {
-        startDischargeAudioLoop();
-      }
+    lines.filter(Boolean).forEach(line => {
+      console.log(`[Arduino] ${line.trim()}`);
     });
   });
 
@@ -262,8 +251,6 @@ if (MOTOR_ENABLED) {
 
 function triggerMotor() {
   if (!MOTOR_ENABLED) {
-    // No motor connected to report REACHED, so there's nothing to wait for -
-    // just start the audio directly (useful for testing audio in isolation).
     startDischargeAudioLoop();
     return;
   }
@@ -275,17 +262,7 @@ function triggerMotor() {
   motorSerial.write('ROTATE\n', (err) => {
     if (err) console.error('Motor serial write failed:', err.message);
   });
-  // Audio starts when the Arduino reports 'REACHED' (see the 'data' handler
-  // above), not here - so it doesn't overlap the motor's own sound.
-}
-
-// Sent once the discharge audio loop has genuinely finished, so the motor
-// only starts its return trip after the last clip has actually stopped.
-function returnMotor() {
-  if (!MOTOR_ENABLED) return;
-  motorSerial.write('RETURN\n', (err) => {
-    if (err) console.error('Motor serial write failed:', err.message);
-  });
+  startDischargeAudioLoop();
 }
 
 // Filenames are kept as-is and read directly from DISCHARGE_AUDIO_DIR (no
@@ -353,18 +330,11 @@ function drawNextDischargeAudio() {
 }
 
 // Plays tracks back-to-back in random (non-repeating) order until
-// DISCHARGE_DURATION_MS has elapsed since the motor reported REACHED. If a
-// trigger arrives while a loop is already running, it's ignored - the
-// current loop keeps going rather than restarting the window or overlapping
-// playback.
+// DISCHARGE_DURATION_MS has elapsed since the trigger. If a trigger arrives
+// while a loop is already running, it's ignored - the current loop keeps
+// going rather than restarting the window or overlapping playback.
 function startDischargeAudioLoop() {
-  if (!dischargeAudioFiles.length) {
-    // No clips to play - nothing will ever call endDischargeAudioLoop, so
-    // return the motor immediately instead of leaving it stuck out.
-    console.log('Discharge audio: no files to play, returning motor immediately');
-    returnMotor();
-    return;
-  }
+  if (!dischargeAudioFiles.length) return;
   if (dischargeAudioActive) {
     console.log('Discharge audio: loop already running, ignoring overlapping trigger');
     return;
@@ -376,19 +346,11 @@ function startDischargeAudioLoop() {
   playNextDischargeAudio(endAt);
 }
 
-// Marks the loop as finished and tells the motor it's safe to return - this
-// is the only place that happens, so the motor always waits for the last
-// clip to actually finish rather than for a fixed timer.
-function endDischargeAudioLoop(reason) {
-  dischargeAudioActive = false;
-  console.log(`Discharge audio: ${reason}`);
-  returnMotor();
-}
-
 function playNextDischargeAudio(endAt) {
   const remainingMs = endAt - Date.now();
   if (remainingMs <= 0) {
-    endDischargeAudioLoop('loop finished');
+    dischargeAudioActive = false;
+    console.log('Discharge audio: loop finished');
     return;
   }
 
@@ -398,7 +360,8 @@ function playNextDischargeAudio(endAt) {
   // Don't start a track that would run past endAt - stop the loop early
   // instead, rather than overshooting the motor's return time.
   if (duration > remainingMs) {
-    endDischargeAudioLoop(`next track (${file}, ${(duration / 1000).toFixed(1)}s) doesn't fit remaining ${(remainingMs / 1000).toFixed(1)}s - stopping loop early`);
+    dischargeAudioActive = false;
+    console.log(`Discharge audio: next track (${file}, ${(duration / 1000).toFixed(1)}s) doesn't fit remaining ${(remainingMs / 1000).toFixed(1)}s - stopping loop early`);
     return;
   }
 

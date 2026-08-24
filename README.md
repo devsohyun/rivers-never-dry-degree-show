@@ -36,6 +36,13 @@ node server
 
 ## Usage
 
+### Arduino
+
+Make sure the discharge duration is set to the same value in both `server.js` and `Rotate_StepperMotor_OSC.ino` — they're independent timers and only stay in sync if updated together.
+
+- `server.js`: `DISCHARGE_DURATION_MS`
+- `Rotate_StepperMotor_OSC.ino`: `RETURN_DELAY_MS`
+
 ### Audio
 
 The `BackgroundAudioWAV` decoder (used in `InteractiveMap_AudioPlayer.ino`) is strict about WAV format: it only accepts linear PCM (format tag 1) with an exact canonical 16-byte `fmt` chunk. Files must be clean 16-bit linear PCM, 44100Hz, stereo.
@@ -69,16 +76,11 @@ This is what actually drives the physical installation, and it's on a completely
 - That window is deliberately shortened by `DISCHARGE_DURATION_MS` (`exhibitDurationMs`) so the *last* scheduled event's full cycle (motor out + audio + motor back) finishes at exhibition close instead of only starting there.
 - Each mapped time becomes a `setTimeout(..., delay)` that calls `triggerMotor()`. Any date that maps to a time already in the past (e.g. server restarted partway through the day) is skipped rather than fired immediately.
 
-**What happens on trigger — the motor/audio handshake:** the motor and audio are kept in sync by an explicit serial handshake with the `Rotate_StepperMotor_OSC` Arduino, not by two independent timers:
+**What happens on trigger:** `triggerMotor()` writes `ROTATE\n` over serial to the `Rotate_StepperMotor_OSC` Arduino and, at the same time, calls `startDischargeAudioLoop()` on the server side. These are two independent timers, not a handshake — the Arduino moves the stepper out and, once it reaches position, waits locally for its own `RETURN_DELAY_MS` before moving back, while the server separately runs its own `DISCHARGE_DURATION_MS` audio loop. **The two constants must be kept equal** (see Usage → Arduino above), or the motor and audio will drift out of sync.
 
-1. `triggerMotor()` writes `ROTATE\n` over serial. The Arduino starts moving the stepper out and nothing else happens yet — audio does not start here, so the motor's own sound isn't stepped on.
-2. Once the Arduino physically reaches the rotated position, it writes back the line `REACHED`. The server's serial `data` handler watches for that exact token and only then calls `startDischargeAudioLoop()`.
-3. The audio loop draws tracks from `app/audio/discharge/*.wav` via a shuffled "bag" (`drawNextDischargeAudio()` — no repeats until every track has played once, even across a reshuffle) and plays them back-to-back with `afplay` for `DISCHARGE_DURATION_MS` (10 min). Before starting each track it checks the track's precomputed duration against the time remaining in the window (`readWavDurationMs()`, read once at startup from each file's WAV header) — if a track wouldn't finish in time, the loop ends early instead of starting it and overrunning.
-4. Whichever way the loop ends, `endDischargeAudioLoop()` is the single place that runs next: it flips `dischargeAudioActive` off and calls `returnMotor()`, which writes `RETURN\n` over serial. Only then does the Arduino move the motor back to its initial position.
+The audio loop draws tracks from `app/audio/discharge/*.wav` via a shuffled "bag" (`drawNextDischargeAudio()` — no repeats until every track has played once, even across a reshuffle) and plays them back-to-back with `afplay` for `DISCHARGE_DURATION_MS` (10 min). Before starting each track it checks the track's precomputed duration against the time remaining in the window (`readWavDurationMs()`, read once at startup from each file's WAV header) — if a track wouldn't finish in time, the loop ends early instead of starting it and overrunning, so audio never plays past the motor's own return time as long as the two constants match.
 
-Because the motor's return is driven by this message rather than a local timer, the motor can never arrive back before the audio genuinely finishes — see `app/controllers/Rotate_StepperMotor_OSC/Rotate_StepperMotor_OSC.ino` for the matching Arduino-side state machine (`IDLE → MOVING_OUT → WAITING → MOVING_BACK`).
-
-Setting `MOTOR_ENABLED = false` skips opening the serial port entirely and short-circuits both ends of the handshake: `triggerMotor()` starts the audio loop immediately (no `REACHED` to wait for), and `returnMotor()` becomes a no-op — useful for testing the audio schedule alone without the Arduino connected.
+Setting `MOTOR_ENABLED = false` skips opening the serial port entirely — `triggerMotor()` still starts the audio loop, just without sending anything over serial — useful for testing the audio schedule alone without the Arduino connected.
 
 `DEBUG_MODE = true` fires one `triggerMotor()` immediately on startup (instead of waiting for a scheduled time) and logs the EA/Thames Water requests more verbosely — turn it off for real exhibition runs so the schedule isn't jumped.
 
