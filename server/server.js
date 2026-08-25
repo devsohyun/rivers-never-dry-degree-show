@@ -23,7 +23,7 @@ const DEBUG_MODE = true;
 // (or tomorrow, if that time has already passed) - set for a specific demo
 // moment (e.g. a viva) rather than "as soon as the server starts."
 const DEBUG_TRIGGER_HOUR = 16; // 24h clock, local time
-const DEBUG_TRIGGER_MINUTE = 35;
+const DEBUG_TRIGGER_MINUTE = 45;
 
 const SOCKETIO_PORT = 8888;
 const OSC_CLIENT_PORT = 8000;
