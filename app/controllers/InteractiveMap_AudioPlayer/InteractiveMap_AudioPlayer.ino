@@ -17,6 +17,13 @@ File currentFile;
 unsigned long lastPress[NUM_BUTTONS] = {0, 0, 0, 0, 0};
 const unsigned long DEBOUNCE_MS = 200;
 
+// Tracks whether the SD peripheral is known-good. SD.begin() only runs once
+// in setup() by default, so a card swapped while the board stays powered
+// (no reset) leaves this stuck on the old, now-invalid card state - every
+// SD.open() afterward fails silently and nothing plays until the board is
+// reset. sdReady lets startTrack() notice that and recover on its own.
+bool sdReady = false;
+
 // Interrupts whatever is currently streaming and starts a new track from byte 0.
 void startTrack(const char* filename) {
   if (currentFile) {
@@ -30,10 +37,23 @@ void startTrack(const char* filename) {
   // RIFF/fmt/data sequence after repeated retriggers.
   wav.flush();
 
+  // Only re-runs SD.begin() when the card is already known bad, so a normal
+  // button press costs nothing extra - this never runs mid-playback.
+  if (!sdReady) {
+    Serial.println("SD not ready, re-initializing (card swapped without reset?)...");
+    sdReady = SD.begin(SD_CS, SPI_QUARTER_SPEED);
+    Serial.println(sdReady ? "SD card OK" : "ERROR: SD.begin() failed - check wiring/CS pin/card format");
+  }
+
   currentFile = SD.open(filename);
   if (!currentFile) {
     Serial.print("ERROR: could not open ");
     Serial.println(filename);
+    // Open failing even though begin() just succeeded (or was already marked
+    // ready) usually means the card underneath has changed again - mark it
+    // not-ready so the *next* press retries begin() instead of repeatedly
+    // opening against a stale peripheral state.
+    sdReady = false;
   } else {
     Serial.print("Opened ");
     Serial.print(filename);
@@ -47,18 +67,15 @@ void setup() {
   Serial.begin(9600);
   delay(2000);
 
-  if (!SD.begin(SD_CS, SPI_QUARTER_SPEED)) {
-    Serial.println("ERROR: SD.begin() failed - check wiring/CS pin/card format");
-  } else {
-    Serial.println("SD card OK");
-  }
+  sdReady = SD.begin(SD_CS, SPI_QUARTER_SPEED);
+  Serial.println(sdReady ? "SD card OK" : "ERROR: SD.begin() failed - check wiring/CS pin/card format");
 
   // wav.begin() also initializes the underlying I2S peripheral, so no separate
   // i2s.begin() call is needed.
   wav.begin();
   Serial.println("wav.begin() done, ready");
 
-  wav.setGain(1.0); // volume multiplier, 1.0 = unity
+  wav.setGain(0.8); // volume multiplier, 1.0 = unity
 }
 
 void loop() {

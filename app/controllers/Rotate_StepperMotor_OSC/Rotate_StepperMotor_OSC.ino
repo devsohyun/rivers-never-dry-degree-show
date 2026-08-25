@@ -16,7 +16,7 @@ AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 //   ROTATE_STEPS = (desired_angle_degrees / 360) * 1600
 // e.g. 67 steps for ~15 degrees, 89 for ~20 degrees, 133 for ~30 degrees.
 // Recompute this if the driver's microstep DIP switches change.
-const long ROTATE_STEPS = 380; // (desired_angle_degrees / 360) * 1600
+const long ROTATE_STEPS = 280; // (desired_angle_degrees / 360) * 1600
 const unsigned long RETURN_DELAY_MS = 10UL * 60UL * 1000UL; // 10 minutes - must match DISCHARGE_DURATION_MS in server.js
 
 enum MotorState { IDLE, MOVING_OUT, WAITING, MOVING_BACK };
@@ -87,7 +87,7 @@ void handleRotateCommand() {
     Serial.println("ROTATE ignored, motor busy");
     return;
   }
-  stepper.moveTo(ROTATE_STEPS);
+  stepper.moveTo(-ROTATE_STEPS); // negated to rotate the opposite direction
   motorState = MOVING_OUT;
   Serial.println("ROTATE received, moving motor");
 }

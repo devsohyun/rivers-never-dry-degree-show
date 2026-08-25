@@ -18,6 +18,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // clearly as debug output. Leave false for real exhibition runs.
 const DEBUG_MODE = true;
 
+// When DEBUG_MODE is true, instead of firing immediately on startup, the
+// motor + audio trigger is scheduled for this local wall-clock time today
+// (or tomorrow, if that time has already passed) - set for a specific demo
+// moment (e.g. a viva) rather than "as soon as the server starts."
+const DEBUG_TRIGGER_HOUR = 16; // 24h clock, local time
+const DEBUG_TRIGGER_MINUTE = 35;
+
 const SOCKETIO_PORT = 8888;
 const OSC_CLIENT_PORT = 8000;
 const OSC_SERVER_PORT = 8001;
@@ -448,8 +455,19 @@ function scheduleMotorTriggers() {
 scheduleMotorTriggers();
 
 if (DEBUG_MODE) {
-  console.log('DEBUG_MODE: triggering motor + local audio immediately for testing');
-  triggerMotor();
+  const now = new Date();
+  const debugTriggerAt = new Date(now);
+  debugTriggerAt.setHours(DEBUG_TRIGGER_HOUR, DEBUG_TRIGGER_MINUTE, 0, 0);
+  if (debugTriggerAt <= now) {
+    debugTriggerAt.setDate(debugTriggerAt.getDate() + 1);
+  }
+  const debugDelay = debugTriggerAt.getTime() - now.getTime();
+
+  console.log(`DEBUG_MODE: scheduling motor + local audio for ${debugTriggerAt.toISOString()} (in ${(debugDelay / 60000).toFixed(1)} min)`);
+  setTimeout(() => {
+    console.log('DEBUG_MODE: triggering motor + local audio at scheduled debug time');
+    triggerMotor();
+  }, debugDelay);
 }
 
 // ---- Socket.IO <-> OSC bridge ----
