@@ -55,6 +55,7 @@ Re-upload whenever the `.ino` file changes, a `git pull` alone won't update what
 - Performs across **2 displays**, each **440 x 1920** (vertical)
 - Uses the **SPH**, **Sphere**, and **T3D** tool sets by Josef Pelz ([patreon.com/cw/JosefPelz](https://www.patreon.com/cw/JosefPelz))
 - Requires a high-performance GPU, the POP operators depend on it
+- It is set to change visuals depending on the values getting from OSC communication - make sure to start the server.js before starting TouchDesigner to update values. 
 
 ## Usage
 
