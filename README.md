@@ -16,7 +16,7 @@ app/
     Rotate_StepperMotor_OSC/      Arduino sketch: stepper motor, triggered over serial
   visuals/
     SPH_WQ_Visuals.toe           TouchDesigner, main visuals file
-    visualisation.toe            TouchDesigner
+    visualisation.toe            TouchDesigner, test file (dummy)
 server/
   data/
     discharge-schedule.json      Historical discharge timestamps mapped onto the exhibition window
