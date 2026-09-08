@@ -15,7 +15,7 @@ app/
       sd_card/                   Button-triggered tracks, copied onto the player's SD card
     Rotate_StepperMotor_OSC/      Arduino sketch: stepper motor, triggered over serial
   visuals/
-    SPH_Test.toe                 TouchDesigner
+    SPH_WQ_Visuals.toe           TouchDesigner, main visuals file
     visualisation.toe            TouchDesigner
 server/
   data/
@@ -46,6 +46,15 @@ Cloning the repo only puts the `.ino` files on your computer. It doesn't flash t
 | Raspberry Pi Pico (interactive map) | `app/controllers/InteractiveMap_AudioPlayer/InteractiveMap_AudioPlayer.ino` | Also copy the tracks in `sd_card/` onto the player's SD card separately, they aren't part of the sketch upload. |
 
 Re-upload whenever the `.ino` file changes, a `git pull` alone won't update what's running on the board.
+
+## TouchDesigner
+
+- Main file: `app/visuals/SPH_WQ_Visuals.toe`
+- Built on TouchDesigner **2025.32280**
+- The OSC In CHOP's IP address must match the one `server.js` sends to (`OSC_CLIENT`, see `server.js`)
+- Performs across **2 displays**, each **440 x 1920** (vertical)
+- Uses the **SPH**, **Sphere**, and **T3D** tool sets by Josef Pelz ([patreon.com/cw/JosefPelz](https://www.patreon.com/cw/JosefPelz))
+- Requires a high-performance GPU, the POP operators depend on it
 
 ## Usage
 
