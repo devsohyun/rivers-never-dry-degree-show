@@ -34,6 +34,17 @@ Start the server:
 node server
 ```
 
+## Firmware upload
+
+Cloning the repo only puts the `.ino` files on your computer. It doesn't flash the boards. Each controller needs to be uploaded manually, over USB, using the Arduino IDE:
+
+| Board | Sketch | Notes |
+|---|---|---|
+| Arduino (stepper motor) | `app/controllers/Rotate_StepperMotor_OSC/Rotate_StepperMotor_OSC.ino` | Drives the motor, triggered over serial from `server.js`. |
+| Raspberry Pi Pico (interactive map) | `app/controllers/InteractiveMap_AudioPlayer/InteractiveMap_AudioPlayer.ino` | Also copy the tracks in `sd_card/` onto the player's SD card separately, they aren't part of the sketch upload. |
+
+Re-upload whenever the `.ino` file changes, a `git pull` alone won't update what's running on the board.
+
 ## Usage
 
 ### Arduino
