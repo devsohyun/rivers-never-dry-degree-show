@@ -2,6 +2,8 @@
 
 Rivers Never Dry installation for MA Computational Arts Degree Show 2026 at Goldsmiths, University of London.
 
+For further information and installation pictures, see [`Rivers-Never-Dry_Documentation.pdf`](./Rivers-Never-Dry_Documentation.pdf).
+
 ## Project structure
 
 ```
